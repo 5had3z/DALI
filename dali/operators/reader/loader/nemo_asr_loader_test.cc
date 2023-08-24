@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "dali/operators/reader/loader/nemo_asr_loader.h"
 #include <gtest/gtest.h>
 #include <cstdio>
-#include <utility>
 #include <sstream>
 #include <string>
-#include "dali/pipeline/data/backend.h"
-#include "dali/test/dali_test_config.h"
-#include "dali/pipeline/data/views.h"
-#include "dali/test/tensor_test_utils.h"
-#include "dali/operators/reader/loader/nemo_asr_loader.h"
+#include <utility>
 #include "dali/kernels/signal/downmixing.h"
+#include "dali/pipeline/data/backend.h"
+#include "dali/pipeline/data/views.h"
+#include "dali/test/dali_test_config.h"
+#include "dali/test/tensor_test_utils.h"
 
 namespace dali {
 
@@ -31,8 +31,10 @@ std::string audio_data_root = make_string(testing::dali_extra_path(), "/db/audio
 
 TEST(NemoAsrLoaderTest, ParseManifest) {
   std::stringstream ss;
-  ss << R"code({"audio_filepath": "path/to/audio1.wav", "duration": 1.45, "text": "     A ab B C D   "})code" << std::endl;
-  ss << R"code({"audio_filepath": "path/to/audio2.wav", "duration": 2.45, "offset": 1.03, "text": "C DA B"})code" << std::endl;
+  ss << R"code({"audio_filepath": "path/to/audio1.wav", "duration": 1.45, "text": "     A ab B C D   "})code"
+     << std::endl;
+  ss << R"code({"audio_filepath": "path/to/audio2.wav", "duration": 2.45, "offset": 1.03, "text": "C DA B"})code"
+     << std::endl;
   ss << R"code({"audio_filepath": "path/to/audio3.wav", "duration": 3.45})code" << std::endl;
   std::vector<NemoAsrEntry> entries;
   detail::ParseManifest(entries, ss);
@@ -84,31 +86,29 @@ TEST(NemoAsrLoaderTest, ParseManifest) {
 }
 
 TEST(NemoAsrLoaderTest, ParseNonAsciiTransript) {
-  using TestData = std::pair<std::string, std::vector<uint8_t>>;
+  using TestData = std::pair<std::u8string, std::vector<uint8_t>>;
 
   std::vector<TestData> tests;
-  tests.emplace_back(u8"это проверка",
-    std::vector<uint8_t>{
-      0xd1, 0x8d, 0xd1, 0x82, 0xd0, 0xbe, 0x20, 0xd0,
-      0xbf, 0xd1, 0x80, 0xd0, 0xbe, 0xd0, 0xb2, 0xd0,
-      0xb5, 0xd1, 0x80, 0xd0, 0xba, 0xd0, 0xb0});
-  tests.emplace_back(u8"这是一个测试",
-    std::vector<uint8_t>{
-      0xe8, 0xbf, 0x99, 0xe6, 0x98, 0xaf, 0xe4, 0xb8, 0x80,
-      0xe4, 0xb8, 0xaa, 0xe6, 0xb5, 0x8b, 0xe8, 0xaf, 0x95});
-  tests.emplace_back(u8"Dziękuję",
-    std::vector<uint8_t>{
-      0x44, 0x7a, 0x69, 0xc4, 0x99, 0x6b, 0x75, 0x6a, 0xc4, 0x99});
   tests.emplace_back(
-      u8"\u0e02\u0e2d\u0e1a\u0e04\u0e38\u0e13\u0e04\u0e23\u0e31\u0e1a",  // u8"ขอบคุณครับ"
-      std::vector<uint8_t>{
-        0xe0, 0xb8, 0x82, 0xe0, 0xb8, 0xad, 0xe0, 0xb8, 0x9a, 0xe0,
-        0xb8, 0x84, 0xe0, 0xb8, 0xb8, 0xe0, 0xb8, 0x93, 0xe0, 0xb8,
-        0x84, 0xe0, 0xb8, 0xa3, 0xe0, 0xb8, 0xb1, 0xe0, 0xb8, 0x9a});
+      std::u8string(u8"это проверка"),
+      std::vector<uint8_t>{0xd1, 0x8d, 0xd1, 0x82, 0xd0, 0xbe, 0x20, 0xd0, 0xbf, 0xd1, 0x80, 0xd0,
+                           0xbe, 0xd0, 0xb2, 0xd0, 0xb5, 0xd1, 0x80, 0xd0, 0xba, 0xd0, 0xb0});
+  tests.emplace_back(std::u8string(u8"这是一个测试"),
+                     std::vector<uint8_t>{0xe8, 0xbf, 0x99, 0xe6, 0x98, 0xaf, 0xe4, 0xb8, 0x80,
+                                          0xe4, 0xb8, 0xaa, 0xe6, 0xb5, 0x8b, 0xe8, 0xaf, 0x95});
+  tests.emplace_back(u8"Dziękuję", std::vector<uint8_t>{0x44, 0x7a, 0x69, 0xc4, 0x99, 0x6b, 0x75,
+                                                        0x6a, 0xc4, 0x99});
+  tests.emplace_back(
+      std::u8string(
+          u8"\u0e02\u0e2d\u0e1a\u0e04\u0e38\u0e13\u0e04\u0e23\u0e31\u0e1a"),  // u8"ขอบคุณครับ"
+      std::vector<uint8_t>{0xe0, 0xb8, 0x82, 0xe0, 0xb8, 0xad, 0xe0, 0xb8, 0x9a, 0xe0,
+                           0xb8, 0x84, 0xe0, 0xb8, 0xb8, 0xe0, 0xb8, 0x93, 0xe0, 0xb8,
+                           0x84, 0xe0, 0xb8, 0xa3, 0xe0, 0xb8, 0xb1, 0xe0, 0xb8, 0x9a});
 
   for (const auto& data : tests) {
     std::stringstream ss;
-    ss << R"code({"audio_filepath": "path/to/audio1.wav", "duration": 1.45, "text": ")code" << data.first << R"code("})code" << std::endl;
+    ss << R"code({"audio_filepath": "path/to/audio1.wav", "duration": 1.45, "text": ")code"
+       << std::string(data.first.begin(), data.first.end()) << R"code("})code" << std::endl;
     std::vector<NemoAsrEntry> entries;
     detail::ParseManifest(entries, ss);
     ASSERT_EQ(1, entries.size());
@@ -202,7 +202,7 @@ TEST(NemoAsrLoaderTest, ReadSample) {
   std::vector<int16_t> ref_data{std::istream_iterator<int16_t>(file),
                                 std::istream_iterator<int16_t>()};
   int64_t ref_sz = ref_data.size();
-  int64_t ref_samples = ref_sz/2;
+  int64_t ref_samples = ref_sz / 2;
   int64_t ref_channels = 2;
 
   {
@@ -229,8 +229,8 @@ TEST(NemoAsrLoaderTest, ReadSample) {
 
   std::vector<float> downmixed(ref_samples, 0.0f);
   for (int i = 0; i < ref_samples; i++) {
-    double l = ConvertSatNorm<float>(ref_data[2*i]);
-    double r = ConvertSatNorm<float>(ref_data[2*i+1]);
+    double l = ConvertSatNorm<float>(ref_data[2 * i]);
+    double r = ConvertSatNorm<float>(ref_data[2 * i + 1]);
     downmixed[i] = (l + r) / 2;
   }
   {
@@ -274,7 +274,7 @@ TEST(NemoAsrLoaderTest, ReadSample) {
       loader.PrepareMetadata();
       loader.ReadSample(sample);
       sample_audio.Resize(sample.shape(), DALI_FLOAT);
-    auto sample_audio_view = sample_view(sample_audio);
+      auto sample_audio_view = sample_view(sample_audio);
       sample.decode_audio(sample_audio_view, 0);
     }
 
@@ -295,13 +295,13 @@ TEST(NemoAsrLoaderTest, ReadSample) {
     Tensor<CPUBackend> sample_int16_audio;
     {
       auto spec = OpSpec("NemoAsrReader")
-                    .AddArg("manifest_filepaths", std::vector<std::string>{manifest_filepath})
-                    .AddArg("downmix", true)
-                    .AddArg("sample_rate", static_cast<float>(sr_out))
-                    .AddArg("dtype", DALI_INT16)
-                    .AddArg("num_threads", 4)
-                    .AddArg("max_batch_size", 32)
-                    .AddArg("device_id", -1);
+                      .AddArg("manifest_filepaths", std::vector<std::string>{manifest_filepath})
+                      .AddArg("downmix", true)
+                      .AddArg("sample_rate", static_cast<float>(sr_out))
+                      .AddArg("dtype", DALI_INT16)
+                      .AddArg("num_threads", 4)
+                      .AddArg("max_batch_size", 32)
+                      .AddArg("device_id", -1);
       NemoAsrLoader loader(spec);
       loader.PrepareMetadata();
       loader.ReadSample(sample_int16);
@@ -340,12 +340,9 @@ TEST(NemoAsrLoaderTest, ReadSample_OffsetAndDuration) {
   tempfile(manifest_filepath);
 
   std::vector<std::pair<double, double>> offset_and_duration = {
-      std::make_pair(0.0, -1.0),
-      std::make_pair(0.5, -1.0),
-      std::make_pair(0.05, 0.2),
-      std::make_pair(0.05, 100.2)
-  };
-  for (const auto &entry : offset_and_duration) {
+      std::make_pair(0.0, -1.0), std::make_pair(0.5, -1.0), std::make_pair(0.05, 0.2),
+      std::make_pair(0.05, 100.2)};
+  for (const auto& entry : offset_and_duration) {
     double offset_sec, duration_sec;
     std::tie(offset_sec, duration_sec) = entry;
     std::ofstream f(manifest_filepath);
@@ -358,12 +355,12 @@ TEST(NemoAsrLoaderTest, ReadSample_OffsetAndDuration) {
     f.close();
 
     auto spec = OpSpec("NemoAsrReader")
-          .AddArg("manifest_filepaths", std::vector<std::string>{manifest_filepath})
-          .AddArg("downmix", false)
-          .AddArg("dtype", DALI_INT16)
-          .AddArg("num_threads", 4)
-          .AddArg("max_batch_size", 32)
-          .AddArg("device_id", -1);
+                    .AddArg("manifest_filepaths", std::vector<std::string>{manifest_filepath})
+                    .AddArg("downmix", false)
+                    .AddArg("dtype", DALI_INT16)
+                    .AddArg("num_threads", 4)
+                    .AddArg("max_batch_size", 32)
+                    .AddArg("device_id", -1);
 
     NemoAsrLoader loader(spec);
     loader.PrepareMetadata();

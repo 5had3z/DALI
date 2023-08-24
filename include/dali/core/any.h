@@ -16,15 +16,14 @@
 #define DALI_CORE_ANY_H_
 
 #include <exception>
-#include <utility>
 #include <type_traits>
 #include <typeinfo>
+#include <utility>
 
 namespace dali {
 namespace detail {
 
-struct alignas(8)
-any_placeholder {
+struct alignas(8) any_placeholder {
   constexpr any_placeholder() = default;
   char data[8] = {};
 };
@@ -44,37 +43,37 @@ struct any_helper_base {
 
   template <typename T>
   T *get(any_placeholder *p) const noexcept {
-    return reinterpret_cast<T*>(get_void(p));
+    return reinterpret_cast<T *>(get_void(p));
   }
   template <typename T>
   const T *get(const any_placeholder *p) const noexcept {
-    return reinterpret_cast<const T*>(get_void(p));
+    return reinterpret_cast<const T *>(get_void(p));
   }
 };
 
-template <typename T, bool dynamic =
-  (sizeof(T) > sizeof(any_placeholder) ||
-  !std::is_pod<T>::value ||  // this could be weaker?
-  alignof(T) > alignof(any_placeholder))>
+template <typename T, bool dynamic = (sizeof(T) > sizeof(any_placeholder) ||
+                                      !(std::is_standard_layout<T>::value &&
+                                        std::is_trivial<T>::value) ||  // this could be weaker?
+                                      alignof(T) > alignof(any_placeholder))>
 struct any_helper : any_helper_base {
   template <typename... Args>
-  static void create(any_placeholder *placeholder, Args&&... args) {
-    new(placeholder) T(std::forward<Args>(args)...);
+  static void create(any_placeholder *placeholder, Args &&...args) {
+    new (placeholder) T(std::forward<Args>(args)...);
   }
 
   void destroy(any_placeholder *placeholder) const override {
-    reinterpret_cast<T*>(placeholder)->~T();
+    reinterpret_cast<T *>(placeholder)->~T();
   }
   void free(any_placeholder *placeholder) const override {
-    reinterpret_cast<T*>(placeholder)->~T();
+    reinterpret_cast<T *>(placeholder)->~T();
   }
 
   void *get_void(any_placeholder *p) const noexcept override {
-    return reinterpret_cast<void*>(p);
+    return reinterpret_cast<void *>(p);
   }
 
   const void *get_void(const any_placeholder *p) const noexcept override {
-    return reinterpret_cast<const void*>(p);
+    return reinterpret_cast<const void *>(p);
   }
 
   void clone(any_placeholder *dest, const any_placeholder *src) const override {
@@ -95,8 +94,8 @@ struct any_helper : any_helper_base {
 template <typename T>
 struct any_helper<T, true> : any_helper_base {
   template <typename... Args>
-  static void create(any_placeholder *placeholder, Args&&... args) {
-    *reinterpret_cast<T**>(placeholder) = new T(std::forward<Args>(args)...);
+  static void create(any_placeholder *placeholder, Args &&...args) {
+    *reinterpret_cast<T **>(placeholder) = new T(std::forward<Args>(args)...);
   }
 
   void destroy(any_placeholder *placeholder) const override {
@@ -104,17 +103,17 @@ struct any_helper<T, true> : any_helper_base {
   }
 
   void free(any_placeholder *placeholder) const override {
-    T **pptr = reinterpret_cast<T**>(placeholder);
+    T **pptr = reinterpret_cast<T **>(placeholder);
     delete *pptr;
     *pptr = nullptr;
   }
 
   void *get_void(any_placeholder *p) const noexcept override {
-    return *reinterpret_cast<void**>(p);
+    return *reinterpret_cast<void **>(p);
   }
 
   const void *get_void(const any_placeholder *p) const noexcept override {
-    return *reinterpret_cast<const void*const*>(p);
+    return *reinterpret_cast<const void *const *>(p);
   }
 
   void clone(any_placeholder *dest, const any_placeholder *src) const override {
@@ -175,8 +174,7 @@ class any {
   any(T &&value) {  // NOLINT
     static_assert(std::is_copy_constructible<T>::value,
                   "only copy-constructible types can be stored in 'any'");
-    static_assert(std::is_destructible<T>::value,
-                  "objects stored in 'any' must be destructible");
+    static_assert(std::is_destructible<T>::value, "objects stored in 'any' must be destructible");
     assign<T>(std::move(value));
   }
 
@@ -187,7 +185,9 @@ class any {
     }
   }
 
-  bool has_value() const noexcept { return helper != nullptr; }
+  bool has_value() const noexcept {
+    return helper != nullptr;
+  }
 
   void swap(any &other) noexcept {
     std::swap(helper, other.helper);
@@ -195,11 +195,10 @@ class any {
   }
 
   template <typename T, typename... Args>
-  void emplace(Args&&... args) {
+  void emplace(Args &&...args) {
     static_assert(std::is_copy_constructible<T>::value,
-      "only copy-constructible types can be stored in 'any'");
-    static_assert(std::is_destructible<T>::value,
-      "objects stored in 'any' must be destructible");
+                  "only copy-constructible types can be stored in 'any'");
+    static_assert(std::is_destructible<T>::value, "objects stored in 'any' must be destructible");
     if (is_local_type<T>()) {
       T *ptr = get<T>();
       ptr->~T();
@@ -249,7 +248,7 @@ class any {
 
  private:
   template <typename T, typename... Args>
-  void assign(Args&&... args) {
+  void assign(Args &&...args) {
     helper = &detail::any_helper<T>::instance;
     detail::any_helper<T>::create(&storage, std::forward<Args>(args)...);
   }
@@ -259,11 +258,15 @@ class any {
 
   /// @brief True, if contained type is T, regardless of which module it comes from
   template <typename T>
-  constexpr bool is_type() const { return detail::any_helper<T>::instance.is_same(helper); }
+  constexpr bool is_type() const {
+    return detail::any_helper<T>::instance.is_same(helper);
+  }
 
   /// @brief True, if contained type is exactly T and defined in the same module as the caller
   template <typename T>
-  constexpr bool is_local_type() const { return &detail::any_helper<T>::instance == helper; }
+  constexpr bool is_local_type() const {
+    return &detail::any_helper<T>::instance == helper;
+  }
   detail::any_helper_base *helper = nullptr;
   detail::any_placeholder storage;
 
@@ -377,7 +380,7 @@ const T *any_cast(const any *a) {
 
 // based on example reference implementation
 template <typename T, typename... Args>
-any make_any(Args&&... args) {
+any make_any(Args &&...args) {
   any a;
   a.emplace<T>(std::forward<Args>(args)...);
   return a;
@@ -385,7 +388,7 @@ any make_any(Args&&... args) {
 
 // based on example reference implementation
 template <typename T, typename U, typename... Args>
-any make_any(std::initializer_list<U> il, Args&&... args) {
+any make_any(std::initializer_list<U> il, Args &&...args) {
   any a;
   a.emplace<T>(il, std::forward<Args>(args)...);
   return a;

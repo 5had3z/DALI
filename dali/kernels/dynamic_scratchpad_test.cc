@@ -15,8 +15,8 @@
 #include "dali/kernels/dynamic_scratchpad.h"  // NOLINT
 #include <gtest/gtest.h>
 #include <algorithm>
-#include <iostream>
 #include <chrono>
+#include <iostream>
 #include <random>
 #include <string>
 #include <vector>
@@ -80,27 +80,27 @@ TEST(DynamicScratchpad, BasicTest) {
 inline void ProcessResults(vector<double> &times, const string &header) {
   std::sort(times.begin(), times.end());
   double sum = std::accumulate(times.begin(), times.end(), 0);
-  auto b98 = times.begin() + times.size()/100;
-  auto e98 = times.end() - times.size()/100;
+  auto b98 = times.begin() + times.size() / 100;
+  auto e98 = times.end() - times.size() / 100;
   double sum98 = std::accumulate(b98, e98, 0);
   std::cout << header << "\n"
-            << "Median time:            " << times[times.size()/2] << " ns\n"
-            << "90th percentile:        " << times[times.size()*90/100] << " ns\n"
-            << "99th percentile:        " << times[times.size()*99/100] << " ns\n"
-            << "Mean time:              " << sum/times.size() << " ns\n"
-            << "Mean time (middle 98%): " << sum98/(e98-b98) << " ns\n";
+            << "Median time:            " << times[times.size() / 2] << " ns\n"
+            << "90th percentile:        " << times[times.size() * 90 / 100] << " ns\n"
+            << "99th percentile:        " << times[times.size() * 99 / 100] << " ns\n"
+            << "Mean time:              " << sum / times.size() << " ns\n"
+            << "Mean time (middle 98%): " << sum98 / (e98 - b98) << " ns\n";
 }
 
 TEST(DynamicScratchpad, Perf) {
   std::poisson_distribution size_dist(1024);  // 1 KiB average
-  int max_size = 64 << 20;  // 64 MiB max
+  int max_size = 64 << 20;                    // 64 MiB max
   std::uniform_int_distribution<> num_dist(1, 100);
 
   std::mt19937_64 rng(1234);
 
   auto stream1 = CUDAStreamPool::instance().Get();
   auto stream2 = CUDAStreamPool::instance().Get();
-  cudaStream_t streams[] = { stream1, stream2 };
+  cudaStream_t streams[] = {stream1, stream2};
 
   int max_attempts = 100000;
 
@@ -108,13 +108,13 @@ TEST(DynamicScratchpad, Perf) {
   std::vector<double> alloc_times[nkinds];
   std::vector<double> destroy_times;
   for (auto &v : alloc_times)
-    v.reserve(max_attempts*100);
+    v.reserve(max_attempts * 100);
   destroy_times.reserve(max_attempts);
 
   for (int attempt = 0; attempt < max_attempts; attempt++) {
     auto s = streams[attempt % 2];
-    std::aligned_storage_t<sizeof(DynamicScratchpad), alignof(DynamicScratchpad)> scratch_placement;
-    auto *scratch = new(&scratch_placement) DynamicScratchpad({}, AccessOrder(s));
+    alignas(DynamicScratchpad) std::byte scratch_placement[sizeof(DynamicScratchpad)];
+    auto *scratch = new (&scratch_placement) DynamicScratchpad({}, AccessOrder(s));
     for (int k = 0; k < nkinds; k++) {
       auto kind = static_cast<mm::memory_kind_id>(k);
       if (kind == mm::memory_kind_id::managed)
@@ -125,24 +125,23 @@ TEST(DynamicScratchpad, Perf) {
         auto s = std::chrono::high_resolution_clock::now();
         scratch->Alloc(kind, size, alignof(std::max_align_t));
         auto e = std::chrono::high_resolution_clock::now();
-        alloc_times[k].push_back((e-s).count());
+        alloc_times[k].push_back((e - s).count());
       }
     }
     {
       auto s = std::chrono::high_resolution_clock::now();
       scratch->DynamicScratchpad::~DynamicScratchpad();
       auto e = std::chrono::high_resolution_clock::now();
-      destroy_times.push_back((e-s).count());
+      destroy_times.push_back((e - s).count());
     }
   }
 
-  const char *names[] = { "host", "pinned", "device", "managed" };
+  const char *names[] = {"host", "pinned", "device", "managed"};
 
   for (int k = 0; k < nkinds; k++) {
     if (k == mm::memory_kind_id::managed)
       continue;
-    ProcessResults(alloc_times[k],
-                   make_string("Allocation performance for ", names[k], " memory"));
+    ProcessResults(alloc_times[k], make_string("Allocation performance for ", names[k], " memory"));
   }
 
   ProcessResults(destroy_times, "Scratchpad destruction time");

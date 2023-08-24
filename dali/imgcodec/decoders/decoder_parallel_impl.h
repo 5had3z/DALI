@@ -17,10 +17,10 @@
 
 #include <map>
 #include <memory>
-#include <utility>
-#include <vector>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 #include "dali/core/format.h"
 #include "dali/imgcodec/decoders/decoder_impl.h"
 #include "dali/pipeline/util/thread_pool.h"
@@ -36,12 +36,10 @@ namespace imgcodec {
 class DLL_PUBLIC BatchParallelDecoderImpl : public ImageDecoderImpl {
  public:
   explicit BatchParallelDecoderImpl(int device_id, const std::map<std::string, any> &params)
-  : ImageDecoderImpl(device_id, params) {}
+      : ImageDecoderImpl(device_id, params) {}
 
   using ImageDecoderImpl::CanDecode;
-  std::vector<bool> CanDecode(DecodeContext ctx,
-                              cspan<ImageSource *> in,
-                              DecodeParams opts,
+  std::vector<bool> CanDecode(DecodeContext ctx, cspan<ImageSource *> in, DecodeParams opts,
                               cspan<ROI> rois) override {
     assert(rois.empty() || rois.size() == in.size());
     std::vector<bool> ret(in.size());
@@ -52,18 +50,14 @@ class DLL_PUBLIC BatchParallelDecoderImpl : public ImageDecoderImpl {
   }
 
   using ImageDecoderImpl::Decode;
-  std::vector<DecodeResult> Decode(DecodeContext ctx,
-                                   span<SampleView<CPUBackend>> out,
-                                   cspan<ImageSource *> in,
-                                   DecodeParams opts,
+  std::vector<DecodeResult> Decode(DecodeContext ctx, span<SampleView<CPUBackend>> out,
+                                   cspan<ImageSource *> in, DecodeParams opts,
                                    cspan<ROI> rois) override {
     return ScheduleDecode(std::move(ctx), out, in, opts, rois).get_all();
   }
 
-  std::vector<DecodeResult> Decode(DecodeContext ctx,
-                                   span<SampleView<GPUBackend>> out,
-                                   cspan<ImageSource *> in,
-                                   DecodeParams opts,
+  std::vector<DecodeResult> Decode(DecodeContext ctx, span<SampleView<GPUBackend>> out,
+                                   cspan<ImageSource *> in, DecodeParams opts,
                                    cspan<ROI> rois) override {
     return ScheduleDecode(ctx, out, in, opts, rois).get_all();
   }
@@ -78,24 +72,20 @@ class DLL_PUBLIC BatchParallelDecoderImpl : public ImageDecoderImpl {
     return ScheduleDecode(std::move(ctx), out, in, opts, roi).get_one(0);
   }
 
-  FutureDecodeResults ScheduleDecode(DecodeContext ctx, SampleView<CPUBackend> out,
-                                     ImageSource *in, DecodeParams opts,
-                                     const ROI &roi) override {
+  FutureDecodeResults ScheduleDecode(DecodeContext ctx, SampleView<CPUBackend> out, ImageSource *in,
+                                     DecodeParams opts, const ROI &roi) override {
     return ScheduleDecode(std::move(ctx), make_span(&out, 1), make_cspan(&in, 1), std::move(opts),
                           make_cspan(&roi, 1));
   }
 
-  FutureDecodeResults ScheduleDecode(DecodeContext ctx, SampleView<GPUBackend> out,
-                                     ImageSource *in, DecodeParams opts,
-                                     const ROI &roi) override {
+  FutureDecodeResults ScheduleDecode(DecodeContext ctx, SampleView<GPUBackend> out, ImageSource *in,
+                                     DecodeParams opts, const ROI &roi) override {
     return ScheduleDecode(std::move(ctx), make_span(&out, 1), make_cspan(&in, 1), std::move(opts),
                           make_cspan(&roi, 1));
   }
 
-  FutureDecodeResults ScheduleDecode(DecodeContext ctx,
-                                     span<SampleView<CPUBackend>> out,
-                                     cspan<ImageSource *> in,
-                                     DecodeParams opts,
+  FutureDecodeResults ScheduleDecode(DecodeContext ctx, span<SampleView<CPUBackend>> out,
+                                     cspan<ImageSource *> in, DecodeParams opts,
                                      cspan<ROI> rois = {}) override {
     assert(out.size() == in.size());
     assert(rois.empty() || rois.size() == in.size());
@@ -104,22 +94,22 @@ class DLL_PUBLIC BatchParallelDecoderImpl : public ImageDecoderImpl {
     ROI no_roi;
     for (int i = 0; i < in.size(); i++) {
       auto roi = rois.empty() ? no_roi : rois[i];
-      ctx.tp->AddWork([=, out = out[i], in = in[i]](int tid) mutable {
-          try {
-            promise.set(i, DecodeImplTask(tid, out, in, opts, roi));
-          } catch (...) {
-            promise.set(i, DecodeResult::Failure(std::current_exception()));
-          }
-        }, volume(out[i].shape()));
+      ctx.tp->AddWork(
+          [=, this, out = out[i], in = in[i]](int tid) mutable {
+            try {
+              promise.set(i, DecodeImplTask(tid, out, in, opts, roi));
+            } catch (...) {
+              promise.set(i, DecodeResult::Failure(std::current_exception()));
+            }
+          },
+          volume(out[i].shape()));
     }
     ctx.tp->RunAll(false);
     return promise.get_future();
   }
 
-  FutureDecodeResults ScheduleDecode(DecodeContext ctx,
-                                     span<SampleView<GPUBackend>> out,
-                                     cspan<ImageSource *> in,
-                                     DecodeParams opts,
+  FutureDecodeResults ScheduleDecode(DecodeContext ctx, span<SampleView<GPUBackend>> out,
+                                     cspan<ImageSource *> in, DecodeParams opts,
                                      cspan<ROI> rois = {}) override {
     assert(out.size() == in.size());
     assert(rois.empty() || rois.size() == in.size());
@@ -128,14 +118,15 @@ class DLL_PUBLIC BatchParallelDecoderImpl : public ImageDecoderImpl {
     ROI no_roi;
     for (int i = 0; i < in.size(); i++) {
       auto roi = rois.empty() ? no_roi : rois[i];
-      ctx.tp->AddWork([=, out = out[i], in = in[i]](int tid) mutable {
-          try {
-            promise.set(i, DecodeImplTask(tid, ctx.stream, out, in, opts, roi));
-          } catch (...) {
-            promise.set(i, DecodeResult::Failure(std::current_exception()));
-          }
-        },
-        volume(out[i].shape()));
+      ctx.tp->AddWork(
+          [=, this, out = out[i], in = in[i]](int tid) mutable {
+            try {
+              promise.set(i, DecodeImplTask(tid, ctx.stream, out, in, opts, roi));
+            } catch (...) {
+              promise.set(i, DecodeResult::Failure(std::current_exception()));
+            }
+          },
+          volume(out[i].shape()));
     }
     ctx.tp->RunAll(false);
     return promise.get_future();
@@ -151,11 +142,8 @@ class DLL_PUBLIC BatchParallelDecoderImpl : public ImageDecoderImpl {
    * @param roi region-of-interest
    * @return std::vector<DecodeResult>
    */
-  virtual DecodeResult DecodeImplTask(int thread_idx,
-                                      SampleView<CPUBackend> out,
-                                      ImageSource *in,
-                                      DecodeParams opts,
-                                      const ROI &roi) {
+  virtual DecodeResult DecodeImplTask(int thread_idx, SampleView<CPUBackend> out, ImageSource *in,
+                                      DecodeParams opts, const ROI &roi) {
     throw std::logic_error("Backend not supported");
   }
 
@@ -170,12 +158,9 @@ class DLL_PUBLIC BatchParallelDecoderImpl : public ImageDecoderImpl {
    * @param roi region-of-interest
    * @return std::vector<DecodeResult>
    */
-  virtual DecodeResult DecodeImplTask(int thread_idx,
-                                      cudaStream_t stream,
-                                      SampleView<GPUBackend> out,
-                                      ImageSource *in,
-                                      DecodeParams opts,
-                                      const ROI &roi) {
+  virtual DecodeResult DecodeImplTask(int thread_idx, cudaStream_t stream,
+                                      SampleView<GPUBackend> out, ImageSource *in,
+                                      DecodeParams opts, const ROI &roi) {
     throw std::logic_error("Backend not supported");
   }
 };

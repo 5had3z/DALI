@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fstream>
+#include <iomanip>
+#include <iostream>
 #include <list>
 #include <map>
 #include <unordered_map>
-#include <iomanip>
-#include <iostream>
-#include <fstream>
 
 #include "dali/operators/reader/loader/coco_loader.h"
 #include "dali/pipeline/util/lookahead_parser.h"
@@ -38,7 +38,10 @@ struct Polygons {
 };
 
 struct Annotation {
-  enum {POLYGON, RLE} tag_;
+  enum {
+    POLYGON,
+    RLE
+  } tag_;
   int image_id_;
   int category_id_;
   std::array<float, 4> box_;
@@ -57,8 +60,8 @@ struct Annotation {
 };
 
 template <typename T>
-std::enable_if_t<std::is_pod<T>::value, void>
-Read(std::ifstream& file, T& data, const char* filename) {
+std::enable_if_t<std::is_standard_layout<T>::value && std::is_trivial<T>::value, void> Read(
+    std::ifstream &file, T &data, const char *filename) {
   int64_t bytes = sizeof(T);
   file.read(reinterpret_cast<char *>(&data), bytes);
   DALI_ENFORCE(file.gcount() == bytes,
@@ -67,7 +70,7 @@ Read(std::ifstream& file, T& data, const char* filename) {
 }
 
 template <typename T>
-void Read(std::ifstream& file, span<T> data, const char* filename) {
+void Read(std::ifstream &file, span<T> data, const char *filename) {
   if (data.empty())
     return;
 
@@ -79,16 +82,16 @@ void Read(std::ifstream& file, span<T> data, const char* filename) {
 }
 
 template <typename T>
-void Write(std::ofstream& file, T data, const char* filename) {
-  file.write(reinterpret_cast<const char*>(&data), sizeof(T));
+void Write(std::ofstream &file, T data, const char *filename) {
+  file.write(reinterpret_cast<const char *>(&data), sizeof(T));
   DALI_ENFORCE(file.good(), make_string("Error reading from path: ", filename));
 }
 
 template <typename T>
-void Write(std::ofstream& file, span<const T> data, const char* filename) {
+void Write(std::ofstream &file, span<const T> data, const char *filename) {
   if (data.empty())
     return;
-  file.write(reinterpret_cast<const char*>(data.data()), sizeof(T) * data.size());
+  file.write(reinterpret_cast<const char *>(data.data()), sizeof(T) * data.size());
   DALI_ENFORCE(file.good(), make_string("Error reading from path: ", filename));
 }
 
@@ -123,7 +126,7 @@ void SaveToFile(const std::vector<RLEMaskPtr> &input, const std::string path) {
 }
 
 template <typename T>
-void SaveToFile(const std::vector<std::vector<T> > &input, const std::string path) {
+void SaveToFile(const std::vector<std::vector<T>> &input, const std::string path) {
   if (input.empty())
     return;
   std::ofstream file(path, std::ios_base::binary | std::ios_base::out);
@@ -132,7 +135,7 @@ void SaveToFile(const std::vector<std::vector<T> > &input, const std::string pat
   unsigned size = input.size();
   Write(file, size, path.c_str());
 
-  for (auto& v : input) {
+  for (auto &v : input) {
     size = v.size();
     assert(size > 0);
     Write(file, size, path.c_str());
@@ -186,7 +189,7 @@ void LoadFromFile(std::vector<RLEMaskPtr> &output, const std::string path) {
 }
 
 template <typename T>
-void LoadFromFile(std::vector<std::vector<T> > &output, const std::string path) {
+void LoadFromFile(std::vector<std::vector<T>> &output, const std::string path) {
   std::ifstream file(path);
   output.clear();
   if (!file.good())
@@ -226,15 +229,15 @@ void ParseImageInfo(LookaheadParser &parser, std::vector<ImageInfo> &image_infos
     }
     parser.EnterObject();
     ImageInfo image_info;
-    while (const char* internal_key = parser.NextObjectKey()) {
+    while (const char *internal_key = parser.NextObjectKey()) {
       if (0 == std::strcmp(internal_key, "id")) {
-          image_info.original_id_ = parser.GetInt();
+        image_info.original_id_ = parser.GetInt();
       } else if (0 == std::strcmp(internal_key, "width")) {
-          image_info.width_ = parser.GetInt();
+        image_info.width_ = parser.GetInt();
       } else if (0 == std::strcmp(internal_key, "height")) {
-          image_info.height_ = parser.GetInt();
+        image_info.height_ = parser.GetInt();
       } else if (0 == std::strcmp(internal_key, "file_name")) {
-          image_info.filename_ = parser.GetString();
+        image_info.filename_ = parser.GetString();
       } else {
         parser.SkipValue();
       }
@@ -257,7 +260,7 @@ void ParseCategories(LookaheadParser &parser, std::map<int, int> &category_ids) 
     }
     id = -1;
     parser.EnterObject();
-    while (const char* internal_key = parser.NextObjectKey()) {
+    while (const char *internal_key = parser.NextObjectKey()) {
       if (0 == std::strcmp(internal_key, "id")) {
         id = parser.GetInt();
       } else {
@@ -271,8 +274,7 @@ void ParseCategories(LookaheadParser &parser, std::map<int, int> &category_ids) 
 }
 
 void ParseAnnotations(LookaheadParser &parser, std::vector<Annotation> &annotations,
-                      float min_size_threshold, bool ltrb,
-                      bool parse_segmentation, bool parse_rle,
+                      float min_size_threshold, bool ltrb, bool parse_segmentation, bool parse_rle,
                       bool include_iscrowd = true) {
   std::string rle_str;
   std::vector<uint32_t> rle_uints;
@@ -285,7 +287,7 @@ void ParseAnnotations(LookaheadParser &parser, std::vector<Annotation> &annotati
     }
     bool to_add = true;
     parser.EnterObject();
-    while (const char* internal_key = parser.NextObjectKey()) {
+    while (const char *internal_key = parser.NextObjectKey()) {
       if (0 == std::strcmp(internal_key, "image_id")) {
         annotation.image_id_ = parser.GetInt();
       } else if (0 == std::strcmp(internal_key, "category_id")) {
@@ -310,7 +312,7 @@ void ParseAnnotations(LookaheadParser &parser, std::vector<Annotation> &annotati
           rle_str.clear();
           rle_uints.clear();
           int h = -1, w = -1;
-          while (const char* another_key = parser.NextObjectKey()) {
+          while (const char *another_key = parser.NextObjectKey()) {
             if (0 == std::strcmp(another_key, "size")) {
               RAPIDJSON_ASSERT(parser.PeekType() == kArrayType);
               parser.EnterArray();
@@ -345,8 +347,8 @@ void ParseAnnotations(LookaheadParser &parser, std::vector<Annotation> &annotati
         } else if (parser.PeekType() == kArrayType) {
           annotation.tag_ = Annotation::POLYGON;
           int coord_offset = 0;
-          auto& segm_meta = annotation.poly_.segm_meta_;
-          auto& segm_coords = annotation.poly_.segm_coords_;
+          auto &segm_meta = annotation.poly_.segm_meta_;
+          auto &segm_coords = annotation.poly_.segm_coords_;
           parser.EnterArray();
           while (parser.NextArrayValue()) {
             segm_meta.push_back(coord_offset);
@@ -377,8 +379,7 @@ void ParseAnnotations(LookaheadParser &parser, std::vector<Annotation> &annotati
 }
 
 void ParseJsonFile(const OpSpec &spec, std::vector<detail::ImageInfo> &image_infos,
-                   std::vector<detail::Annotation> &annotations,
-                   std::map<int, int> &category_ids,
+                   std::vector<detail::Annotation> &annotations, std::map<int, int> &category_ids,
                    bool parse_segmentation, bool parse_rle) {
   const auto annotations_file = spec.GetArgument<string>("annotations_file");
 
@@ -386,9 +387,8 @@ void ParseJsonFile(const OpSpec &spec, std::vector<detail::ImageInfo> &image_inf
   DALI_ENFORCE(f, "Could not open JSON annotations file: \"" + annotations_file + "\"");
   f.seekg(0, std::ios::end);
   size_t file_size = f.tellg();
-  std::unique_ptr<char, std::function<void(char*)>> buff(
-    new char[file_size + 1],
-    [](char* data) {delete [] data;});
+  std::unique_ptr<char, std::function<void(char *)>> buff(new char[file_size + 1],
+                                                          [](char *data) { delete[] data; });
   f.seekg(0, std::ios::beg);
   buff.get()[file_size] = '\0';
   f.read(buff.get(), file_size);
@@ -401,14 +401,14 @@ void ParseJsonFile(const OpSpec &spec, std::vector<detail::ImageInfo> &image_inf
   float sz_threshold = spec.GetArgument<float>("size_threshold");
   bool include_iscrowd = spec.GetArgument<bool>("include_iscrowd");
   bool ltrb = spec.GetArgument<bool>("ltrb");
-  while (const char* key = parser.NextObjectKey()) {
+  while (const char *key = parser.NextObjectKey()) {
     if (0 == std::strcmp(key, "images")) {
       detail::ParseImageInfo(parser, image_infos);
     } else if (0 == std::strcmp(key, "categories")) {
       detail::ParseCategories(parser, category_ids);
     } else if (0 == std::strcmp(key, "annotations")) {
-      ParseAnnotations(parser, annotations, sz_threshold, ltrb, parse_segmentation,
-                       parse_rle, include_iscrowd);
+      ParseAnnotations(parser, annotations, sz_threshold, ltrb, parse_segmentation, parse_rle,
+                       include_iscrowd);
     } else {
       parser.SkipValue();
     }
@@ -451,9 +451,9 @@ void CocoLoader::SavePreprocessedAnnotations(const std::string &path,
 
 void CocoLoader::ParsePreprocessedAnnotations() {
   assert(HasPreprocessedAnnotations(spec_));
-  const auto path = spec_.HasArgument("meta_files_path")
-      ? spec_.GetArgument<string>("meta_files_path")
-      : spec_.GetArgument<string>("preprocessed_annotations");
+  const auto path = spec_.HasArgument("meta_files_path") ?
+                        spec_.GetArgument<string>("meta_files_path") :
+                        spec_.GetArgument<string>("preprocessed_annotations");
   using detail::LoadFromFile;
   LoadFromFile(offsets_, path + "/offsets.dat");
   LoadFromFile(boxes_, path + "/boxes.dat");
@@ -490,20 +490,19 @@ void CocoLoader::ParseJsonAnnotations() {
   std::map<int, int> category_ids;
 
   bool parse_segmentation = output_polygon_masks_ || output_pixelwise_masks_;
-  detail::ParseJsonFile(spec_, image_infos, annotations, category_ids,
-                        parse_segmentation, output_pixelwise_masks_);
+  detail::ParseJsonFile(spec_, image_infos, annotations, category_ids, parse_segmentation,
+                        output_pixelwise_masks_);
 
   if (images_.empty()) {
-    std::sort(image_infos.begin(), image_infos.end(), [&](auto &left, auto &right) {
-      return left.original_id_ < right.original_id_;
-    });
+    std::sort(image_infos.begin(), image_infos.end(),
+              [&](auto &left, auto &right) { return left.original_id_ < right.original_id_; });
     for (auto &info : image_infos) {
       images_.push_back(info.filename_);
     }
   }
 
-  std::unordered_map<std::string, const detail::ImageInfo*> img_infos_map;
-  std::unordered_map<int, std::list<const detail::Annotation*>> img_annotations_map;
+  std::unordered_map<std::string, const detail::ImageInfo *> img_infos_map;
+  std::unordered_map<int, std::list<const detail::Annotation *>> img_annotations_map;
   img_infos_map.reserve(images_.size());
   img_annotations_map.reserve(images_.size());
   for (const auto &filename : images_) {
@@ -544,7 +543,7 @@ void CocoLoader::ParseJsonAnnotations() {
     int64_t sample_vertices_count = 0;
     int64_t mask_offset = masks_rles_.size();
     int64_t mask_count = 0;
-    for (const auto* annotation_ptr : img_annotations_map[image_id]) {
+    for (const auto *annotation_ptr : img_annotations_map[image_id]) {
       const auto &annotation = *annotation_ptr;
       if (remap_classes) {
         labels_.push_back(category_ids[annotation.category_id_]);
@@ -584,8 +583,8 @@ void CocoLoader::ParseJsonAnnotations() {
             }
             if (ratio) {
               for (size_t i = 0; i < coords.size(); i += 2) {
-                vertices_data_.push_back({coords[i] / image_info.width_,
-                                          coords[i + 1] / image_info.height_});
+                vertices_data_.push_back(
+                    {coords[i] / image_info.width_, coords[i + 1] / image_info.height_});
               }
             } else {
               for (size_t i = 0; i < coords.size(); i += 2) {
@@ -637,9 +636,8 @@ void CocoLoader::ParseJsonAnnotations() {
   images_.clear();
 
   if (spec_.GetArgument<bool>("save_preprocessed_annotations")) {
-    SavePreprocessedAnnotations(
-      spec_.GetArgument<std::string>("save_preprocessed_annotations_dir"),
-      image_label_pairs_);
+    SavePreprocessedAnnotations(spec_.GetArgument<std::string>("save_preprocessed_annotations_dir"),
+                                image_label_pairs_);
   }
 }
 

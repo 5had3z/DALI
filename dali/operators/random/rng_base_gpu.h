@@ -20,17 +20,17 @@
 #include "dali/core/convert.h"
 #include "dali/core/dev_buffer.h"
 #include "dali/core/span.h"
+#include "dali/core/static_switch.h"
 #include "dali/operators/random/rng_base.h"
 #include "dali/pipeline/operator/operator.h"
 #include "dali/pipeline/util/batch_rng.h"
-#include "dali/core/static_switch.h"
 
 namespace dali {
 namespace rng {
 
 struct SampleDesc {
   void *output;
-  const void* input;
+  const void *input;
   int64_t p_count;
   int64_t p_stride;
   int64_t c_count;
@@ -45,8 +45,7 @@ struct BlockDesc {
 
 template <bool IsNoiseGen>
 struct RNGBaseFields<GPUBackend, IsNoiseGen> {
-  RNGBaseFields<GPUBackend, IsNoiseGen>(int64_t seed, int max_batch_size,
-                                        int64_t static_sample_size = -1)
+  RNGBaseFields(int64_t seed, int max_batch_size, int64_t static_sample_size = -1)
       : block_size_(static_sample_size < 0 ? 256 : std::min<int64_t>(static_sample_size, 256)),
         max_blocks_(static_sample_size < 0 ?
                         1024 :
@@ -66,8 +65,7 @@ struct RNGBaseFields<GPUBackend, IsNoiseGen> {
 };
 
 template <typename Integer>
-int DistributeBlocksPerSample(span<int> blocks_per_sample,
-                              span<const Integer> sample_sizes,
+int DistributeBlocksPerSample(span<int> blocks_per_sample, span<const Integer> sample_sizes,
                               int block_size, int max_blocks) {
   int sum = 0;
   int nsamples = sample_sizes.size();
@@ -109,8 +107,8 @@ int64_t SetupBlockDescs(BlockDesc *blocks, int64_t block_sz, int64_t max_nblocks
   }
   SmallVector<int, 256> blocks_per_sample;
   blocks_per_sample.resize(nsamples);
-  int64_t blocks_num = DistributeBlocksPerSample(
-      make_span(blocks_per_sample), make_cspan(sample_sizes), block_sz, max_nblocks);
+  int64_t blocks_num = DistributeBlocksPerSample(make_span(blocks_per_sample),
+                                                 make_cspan(sample_sizes), block_sz, max_nblocks);
   int64_t block = 0;
   for (int s = 0; s < nsamples; s++) {
     auto sample_size = sample_sizes[s];
@@ -129,13 +127,11 @@ int64_t SetupBlockDescs(BlockDesc *blocks, int64_t block_sz, int64_t max_nblocks
 }
 
 template <typename T>
-void SetupSampleDescs(SampleDesc *samples,
-                      TensorListView<StorageGPU, T> &output,
-                      TensorListView<StorageGPU, const T> &input,
-                      int channel_dim = -1) {
+void SetupSampleDescs(SampleDesc *samples, TensorListView<StorageGPU, T> &output,
+                      TensorListView<StorageGPU, const T> &input, int channel_dim = -1) {
   int nsamples = output.num_samples();
   for (int s = 0; s < nsamples; s++) {
-    T *sample_out = static_cast<T*>(output[s].data);
+    T *sample_out = static_cast<T *>(output[s].data);
     const T *sample_in = input.empty() ? nullptr : static_cast<const T *>(input[s].data);
     samples[s].output = sample_out;
     samples[s].input = sample_in;

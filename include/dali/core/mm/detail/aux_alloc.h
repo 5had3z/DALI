@@ -15,12 +15,12 @@
 #ifndef DALI_CORE_MM_DETAIL_AUX_ALLOC_H_
 #define DALI_CORE_MM_DETAIL_AUX_ALLOC_H_
 
-#include <stdlib.h>
 #include <malloc.h>
+#include <stdlib.h>
 #include <algorithm>
 #include <mutex>
-#include "dali/core/spinlock.h"
 #include "dali/core/mm/detail/util.h"
+#include "dali/core/spinlock.h"
 
 namespace dali {
 namespace mm {
@@ -77,12 +77,12 @@ struct fixed_size_allocator {
       if (Block *blk = free_list_) {
         free_list_ = blk->next;
         blk->next = nullptr;
-        return reinterpret_cast<T*>(&blk->storage);
+        return reinterpret_cast<T *>(&blk->storage);
       }
     }
-    Block *blk = static_cast<Block*>(memalign(alignment, sizeof(Block)));
+    Block *blk = static_cast<Block *>(memalign(alignment, sizeof(Block)));
     blk->next = nullptr;
-    return reinterpret_cast<T*>(&blk->storage);
+    return reinterpret_cast<T *>(&blk->storage);
   }
 
   /**
@@ -96,7 +96,7 @@ struct fixed_size_allocator {
    */
   void deallocate(void *ptr) {
     lock_guard guard(lock_);
-    Block *bptr = static_cast<Block*>(ptr);
+    Block *bptr = static_cast<Block *>(ptr);
     bptr->next = free_list_;
     free_list_ = bptr;
   }
@@ -123,7 +123,7 @@ struct fixed_size_allocator {
   }
 
   struct Block {
-    std::aligned_storage_t<size, alignment> storage;
+    alignas(alignment) std::byte storage[size];
     Block *next;
   };
   Block *free_list_ = nullptr;
@@ -146,7 +146,7 @@ struct fixed_size_allocator {
 template <typename T, bool is_thread_local = false>
 struct object_pool_allocator {
   template <typename U>
-  constexpr bool operator==(object_pool_allocator<U, is_thread_local> other) const noexcept  {
+  constexpr bool operator==(object_pool_allocator<U, is_thread_local> other) const noexcept {
     return sizeof(U) == sizeof(T) && alignof(U) == alignof(T);
   }
   template <typename U>
@@ -159,12 +159,14 @@ struct object_pool_allocator {
     using other = object_pool_allocator<U, is_thread_local>;
   };
 
-  using BlockAllocator = fixed_size_allocator<sizeof(T), std::max(alignof(T), alignof(void*))>;
+  using BlockAllocator = fixed_size_allocator<sizeof(T), std::max(alignof(T), alignof(void *))>;
 
   using value_type = T;
   using pointer = T *;
   using reference = T &;
-  static T *address(T &obj) { return &obj; }
+  static T *address(T &obj) {
+    return &obj;
+  }
 
   /**
    * @brief Allocates one object of type T

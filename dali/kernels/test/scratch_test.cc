@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "dali/kernels/scratch.h"
 #include <gtest/gtest.h>
-#include <vector>
 #include <array>
 #include <cassert>
-#include "dali/kernels/kernel_req.h"
-#include "dali/kernels/scratch.h"
+#include <vector>
 #include "dali/core/static_switch.h"
+#include "dali/kernels/kernel_req.h"
 
 namespace dali {
 namespace kernels {
@@ -41,10 +41,10 @@ template <typename MemoryKind, typename T>
 void test_add(ScratchpadEstimator &E, size_t count, size_t align = alignof(T)) {
   int kind_idx = static_cast<int>(mm::kind2id_v<MemoryKind>);
   size_t prev = E.sizes[kind_idx];
-  ASSERT_EQ(align&(align-1), 0) << "Alignment must be a power of 2";
+  ASSERT_EQ(align & (align - 1), 0) << "Alignment must be a power of 2";
   size_t base = align_up(prev, align);
   E.add<MemoryKind, T>(count, align);
-  EXPECT_EQ(E.sizes[kind_idx], base + count*sizeof(T));
+  EXPECT_EQ(E.sizes[kind_idx], base + count * sizeof(T));
 }
 
 TEST(Scratch, Estimator_Init) {
@@ -82,8 +82,8 @@ TEST(Scratch, Estimator) {
 
 TEST(Scratch, BumpAllocator) {
   const size_t size = 1024;
-  std::aligned_storage<size, 64>::type storage;
-  BumpAllocator allocator(reinterpret_cast<char*>(&storage), size);
+  alignas(64) std::byte storage[size];
+  BumpAllocator allocator(reinterpret_cast<char *>(&storage), size);
   size_t n0 = 10, n1 = 20, n2 = 33;
 
   EXPECT_EQ(allocator.total(), size);
@@ -93,17 +93,17 @@ TEST(Scratch, BumpAllocator) {
   auto *p1 = allocator.alloc(n1);
   auto *p2 = allocator.alloc(n2);
 
-  EXPECT_EQ(allocator.avail(), size-(n0+n1+n2));
-  EXPECT_EQ(allocator.used(), n0+n1+n2);
-  EXPECT_EQ(p1-p0, n0);
-  EXPECT_EQ(p2-p1, n1);
+  EXPECT_EQ(allocator.avail(), size - (n0 + n1 + n2));
+  EXPECT_EQ(allocator.used(), n0 + n1 + n2);
+  EXPECT_EQ(p1 - p0, n0);
+  EXPECT_EQ(p2 - p1, n1);
   EXPECT_EQ(allocator.total(), size) << "Total size should remain constant";
 
   BumpAllocator allocator2 = std::move(allocator);
   EXPECT_EQ(allocator.total(), 0) << "After move, allocator should be empty";
 
-  auto *p3 = allocator2.alloc(size-(n0+n1+n2));
-  EXPECT_EQ(p3-p0, n0+n1+n2);
+  auto *p3 = allocator2.alloc(size - (n0 + n1 + n2));
+  EXPECT_EQ(p3 - p0, n0 + n1 + n2);
   EXPECT_EQ(allocator2.total(), size) << "Total size should remain constant";
   EXPECT_EQ(allocator2.used(), size);
   EXPECT_EQ(allocator2.avail(), 0);

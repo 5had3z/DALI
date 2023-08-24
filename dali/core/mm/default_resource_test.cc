@@ -13,16 +13,16 @@
 // limitations under the License.
 
 #include <gtest/gtest.h>
-#include <vector>
 #include <thread>
+#include <vector>
+#include "dali/core/cuda_error.h"
+#include "dali/core/cuda_event.h"
+#include "dali/core/cuda_stream.h"
+#include "dali/core/dev_buffer.h"
+#include "dali/core/device_guard.h"
 #include "dali/core/mm/default_resources.h"
 #include "dali/core/mm/detail/align.h"
 #include "dali/core/mm/malloc_resource.h"
-#include "dali/core/cuda_stream.h"
-#include "dali/core/cuda_event.h"
-#include "dali/core/cuda_error.h"
-#include "dali/core/device_guard.h"
-#include "dali/core/dev_buffer.h"
 
 #include "dali/core/mm/cuda_vm_resource.h"
 #include "dali/core/mm/with_upstream.h"
@@ -37,7 +37,7 @@ namespace test {
 TEST(MMDefaultResource, GetResource_Host) {
   auto *rsrc = GetDefaultResource<memory_kind::host>();
   ASSERT_NE(rsrc, nullptr);
-  char *mem = static_cast<char*>(rsrc->allocate(1000, 32));
+  char *mem = static_cast<char *>(rsrc->allocate(1000, 32));
   ASSERT_NE(mem, nullptr);
   EXPECT_TRUE(mm::detail::is_aligned(mem, 32));
   memset(mem, 42, 1000);
@@ -53,7 +53,7 @@ TEST(MMDefaultResource, GetResource_Pinned) {
 
   CUDAStream stream = CUDAStream::Create(true);
   CUDA_CALL(cudaMemsetAsync(dev, 0, 1000, stream));
-  char *mem = static_cast<char*>(rsrc->allocate(1000, 32));
+  char *mem = static_cast<char *>(rsrc->allocate(1000, 32));
   ASSERT_NE(mem, nullptr);
   EXPECT_TRUE(mm::detail::is_aligned(mem, 32));
   for (int i = 0; i < 1000; i++)
@@ -81,7 +81,7 @@ TEST(MMDefaultResource, GetResource_Managed) {
   char *mem = nullptr;
   constexpr int size = 1000;
   try {
-    mem = static_cast<char*>(rsrc->allocate(size, 32));
+    mem = static_cast<char *>(rsrc->allocate(size, 32));
   } catch (const CUDAError &e) {
     if ((e.is_drv_api() && e.drv_error() == CUDA_ERROR_NOT_SUPPORTED) ||
         (e.is_rt_api() && e.rt_error() == cudaErrorNotSupported)) {
@@ -119,7 +119,7 @@ TEST(MMDefaultResource, GetResource_Device) {
     ASSERT_NE(rsrc, nullptr);
 
     CUDAStream stream = CUDAStream::Create(true);
-    char *mem = static_cast<char*>(rsrc->allocate(1000, 32));
+    char *mem = static_cast<char *>(rsrc->allocate(1000, 32));
     ASSERT_NE(mem, nullptr);
 
     EXPECT_TRUE(mm::detail::is_aligned(mem, 32));
@@ -148,12 +148,12 @@ TEST(MMDefaultResource, GetResource_MultiGPU) {
   } else {
     DeviceGuard dg;
 
-    vector<async_memory_resource<memory_kind::device>*> resources(ndev, nullptr);
+    vector<async_memory_resource<memory_kind::device> *> resources(ndev, nullptr);
     for (int i = 0; i < ndev; i++) {
       resources[i] = GetDefaultDeviceResource(i);
       EXPECT_NE(resources[i], nullptr);
       // If we're using plain cudaMalloc, the resource will be the same for all devices
-      if (!dynamic_cast<mm::cuda_malloc_memory_resource*>(resources[i])) {
+      if (!dynamic_cast<mm::cuda_malloc_memory_resource *>(resources[i])) {
         for (int j = 0; j < i; j++) {
           EXPECT_NE(resources[i], resources[j]) << "Got the same resource for different devices";
         }
@@ -175,8 +175,7 @@ class DummyResource : public memory_resource<Kind> {
     return nullptr;
   }
 
-  void do_deallocate(void *, size_t, size_t) override {
-  }
+  void do_deallocate(void *, size_t, size_t) override {}
 };
 
 template <typename Kind>
@@ -188,10 +187,8 @@ class DummyResource<Kind, true> : public async_memory_resource<Kind> {
     return nullptr;
   }
 
-  void do_deallocate(void *, size_t, size_t) override {
-  }
-  void do_deallocate_async(void *, size_t, size_t, stream_view) override {
-  }
+  void do_deallocate(void *, size_t, size_t) override {}
+  void do_deallocate_async(void *, size_t, size_t, stream_view) override {}
 };
 
 template <typename Kind>
@@ -244,9 +241,9 @@ TEST(MMDefaultResource, InitStampede) {
             return;
           std::this_thread::yield();
         }
-        std::atomic_thread_fence(std::memory_order::memory_order_acquire);
+        std::atomic_thread_fence(std::memory_order::acquire);
         GetDefaultResource<memory_kind::device>();
-        std::atomic_thread_fence(std::memory_order::memory_order_release);
+        std::atomic_thread_fence(std::memory_order::release);
         cnt++;
         while (!f2) {
           if (stop)
@@ -264,7 +261,7 @@ TEST(MMDefaultResource, InitStampede) {
     f1 = false;
     SetDefaultResource<memory_kind::device>(nullptr);
     _Test_FreeDeviceResources();
-    std::atomic_thread_fence(std::memory_order::memory_order_seq_cst);
+    std::atomic_thread_fence(std::memory_order::seq_cst);
     f2 = true;
     while (cnt != 0)
       std::this_thread::yield();
@@ -296,14 +293,14 @@ TEST(MMDefaultResource, GetResource_Device_RangeCheck_MultiGPU) {
     EXPECT_NO_THROW(GetDefaultDeviceResource(i));
   }
   EXPECT_THROW(GetDefaultDeviceResource(ndev), std::out_of_range);
-  EXPECT_THROW(GetDefaultDeviceResource(ndev+100), std::out_of_range);
+  EXPECT_THROW(GetDefaultDeviceResource(ndev + 100), std::out_of_range);
 }
 
 inline bool UseVMM() {
   static const bool use_vmm = []() {
     auto *res = mm::GetDefaultDeviceResource();
     if (auto *up = dynamic_cast<mm::with_upstream<mm::memory_kind::device> *>(res)) {
-      return dynamic_cast<mm::cuda_vm_resource*>(up->upstream()) != nullptr;
+      return dynamic_cast<mm::cuda_vm_resource *>(up->upstream()) != nullptr;
     }
     return false;
   }();
@@ -313,9 +310,9 @@ inline bool UseVMM() {
 template <typename Kind>
 mm::pool_resource_base<Kind> *GetPoolInterface(mm::memory_resource<Kind> *mr) {
   while (mr) {
-    if (auto *pool = dynamic_cast<mm::pool_resource_base<Kind>*>(mr))
+    if (auto *pool = dynamic_cast<mm::pool_resource_base<Kind> *>(mr))
       return pool;
-    if (auto *up = dynamic_cast<mm::with_upstream<Kind>*>(mr)) {
+    if (auto *up = dynamic_cast<mm::with_upstream<Kind> *>(mr)) {
       mr = up->upstream();
     } else {
       break;
@@ -327,7 +324,7 @@ mm::pool_resource_base<Kind> *GetPoolInterface(mm::memory_resource<Kind> *mr) {
 static mm::cuda_vm_resource *GetVMMDefaultResource(int device_id = -1) {
   auto *res = mm::GetDefaultDeviceResource(device_id);
   if (auto *up = dynamic_cast<mm::with_upstream<mm::memory_kind::device> *>(res)) {
-    return dynamic_cast<mm::cuda_vm_resource*>(up->upstream());
+    return dynamic_cast<mm::cuda_vm_resource *>(up->upstream());
   }
   return nullptr;
 }
@@ -418,7 +415,7 @@ TEST(MMDefaultResource, PreallocatePinnedMemory) {
   if (!pool)
     GTEST_SKIP() << "No memory pool in use - cannot test pool preallocation.";
 
-  size_t size = 64_uz << 20;  // 64 MiB
+  size_t size = 64_uz << 20;                     // 64 MiB
   size_t alignment = alignof(std::max_align_t);  // default alignment
   // Try to get increasing amount of memory from the pool until we can't
   for (;; size <<= 1) {
@@ -458,7 +455,7 @@ static void TestPreallocateDeviceMemory(bool multigpu) {
   if (!pool)
     GTEST_SKIP() << "No memory pool in use - cannot test pool preallocation.";
 
-  size_t size = 64_uz << 20;  // 64 MiB
+  size_t size = 64_uz << 20;                     // 64 MiB
   size_t alignment = alignof(std::max_align_t);  // default alignment
   // Try to get increasing amount of memory from the pool until we can't
   for (;; size <<= 1) {
@@ -468,8 +465,8 @@ static void TestPreallocateDeviceMemory(bool multigpu) {
     res->deallocate(mem, size, alignment);
   }
 
-  std::cout << "Preallocating " << (size >> 20) << " MiB of memory on device "
-            << device_id << std::endl;
+  std::cout << "Preallocating " << (size >> 20) << " MiB of memory on device " << device_id
+            << std::endl;
 
   try {
     // Try to preallocate the pool so we're able to get the requested amount

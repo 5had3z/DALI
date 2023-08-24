@@ -21,8 +21,7 @@
 namespace dali {
 
 template <typename ImgType>
-class ColorTest : public GenericMatchingTest<ImgType> {
-};
+class ColorTest : public GenericMatchingTest<ImgType> {};
 
 typedef ::testing::Types<RGB> Types;
 TYPED_TEST_SUITE(ColorTest, Types);

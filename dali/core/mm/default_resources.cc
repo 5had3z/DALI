@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <stdexcept>
-#include <cstring>
 #include "dali/core/mm/default_resources.h"
+#include <cstring>
+#include <stdexcept>
+#include "dali/core/call_at_exit.h"
+#include "dali/core/device_guard.h"
 #include "dali/core/error_handling.h"
 #include "dali/core/format.h"
-#include "dali/core/mm/malloc_resource.h"
-#include "dali/core/mm/binning_resource.h"
-#include "dali/core/device_guard.h"
 #include "dali/core/mm/async_pool.h"
+#include "dali/core/mm/binning_resource.h"
 #include "dali/core/mm/composite_resource.h"
 #include "dali/core/mm/cuda_vm_resource.h"
-#include "dali/core/call_at_exit.h"
+#include "dali/core/mm/malloc_resource.h"
 
 namespace dali {
 namespace mm {
@@ -35,7 +35,7 @@ inline std::shared_ptr<T> wrap(T *p, bool own) {
   if (own)
     return std::shared_ptr<T>(p);
   else
-    return std::shared_ptr<T>(p, [](T*){});
+    return std::shared_ptr<T>(p, [](T *) {});
 }
 
 struct DefaultResources {
@@ -81,9 +81,9 @@ struct DefaultResources {
         int ndevs = 0;
         CUDA_CALL(cudaGetDeviceCount(&ndevs));
         decltype(device) tmp(new std::shared_ptr<device_async_resource>[ndevs]);
-        std::atomic_thread_fence(std::memory_order::memory_order_seq_cst);
+        std::atomic_thread_fence(std::memory_order::seq_cst);
         num_devices = ndevs;
-        std::atomic_thread_fence(std::memory_order::memory_order_seq_cst);
+        std::atomic_thread_fence(std::memory_order::seq_cst);
         device = std::move(tmp);
       }
     }
@@ -91,8 +91,10 @@ struct DefaultResources {
 
   void CheckDeviceIndex(int device_id) const {
     if (device_id < 0 || device_id >= num_devices) {
-      throw std::out_of_range(make_string(device_id, " is not a valid CUDA device index. "
-        "Shoud be 0 <= device_id < ", num_devices, " or negative for current device."));
+      throw std::out_of_range(make_string(device_id,
+                                          " is not a valid CUDA device index. "
+                                          "Shoud be 0 <= device_id < ",
+                                          num_devices, " or negative for current device."));
     }
   }
 
@@ -120,7 +122,7 @@ struct DefaultResources {
     // is allocated dynamically on stack and never destroyed.
     // This accomplishes the intentional leaking of the pointer.
     using Ptr = std::shared_ptr<T>;
-    std::aligned_storage_t<sizeof(Ptr), alignof(Ptr)> dump;
+    alignas(Ptr) std::byte dump[sizeof(Ptr)];
     new (&dump) Ptr(std::move(p));
   }
 };
@@ -166,8 +168,9 @@ struct MMEnv {
       if (!use_dev_mem_pool_env) {
         use_dev_mem_pool = false;
       } else {
-        throw std::invalid_argument("Configuration clash:\n"
-          "DALI_USE_DEVICE_MEM_POOL and DALI_USE_CUDA_MALLOC_ASYNC cannot be used together");
+        throw std::invalid_argument(
+            "Configuration clash:\n"
+            "DALI_USE_DEVICE_MEM_POOL and DALI_USE_CUDA_MALLOC_ASYNC cannot be used together");
       }
     }
 
@@ -175,8 +178,9 @@ struct MMEnv {
       if (!use_vmm_env) {
         use_vmm = false;
       } else {
-        throw std::invalid_argument("Configuration clash:\n"
-          "DALI_USE_VMM and DALI_USE_CUDA_MALLOC_ASYNC cannot be used together");
+        throw std::invalid_argument(
+            "Configuration clash:\n"
+            "DALI_USE_VMM and DALI_USE_CUDA_MALLOC_ASYNC cannot be used together");
       }
     }
 
@@ -190,15 +194,16 @@ struct MMEnv {
       for (int i = 0; i < len; i++) {
         bool valid = std::isdigit(env[i]) || (i == len - 1 && (env[i] == 'k' || env[i] == 'M'));
         if (!valid) {
-          DALI_FAIL(make_string(
-            "DALI_MALLOC_POOL_THRESHOLD must be a number, optionally followed by 'k' or 'M', got: ",
-            env));
+          DALI_FAIL(
+              make_string("DALI_MALLOC_POOL_THRESHOLD must be a number, optionally followed by 'k' "
+                          "or 'M', got: ",
+                          env));
         }
       }
       ssize_t s = atoll(env);
-      if (env[len-1] == 'k')
+      if (env[len - 1] == 'k')
         s <<= 10;
-      else if (env[len-1] == 'M')
+      else if (env[len - 1] == 'M')
         s <<= 20;
       return s;
     } else {
@@ -219,8 +224,8 @@ inline std::shared_ptr<host_memory_resource> CreateDefaultHostResource() {
   if (threshold > 0) {
     using pool_t = pool_resource<mm::memory_kind::host, mm::coalescing_free_tree, spinlock>;
     static auto pool = std::make_shared<pool_t>(rsrc.get());
-    size_t thresholds[] = { threshold };
-    std::shared_ptr<host_memory_resource> resources[2] = { rsrc, pool };
+    size_t thresholds[] = {threshold};
+    std::shared_ptr<host_memory_resource> resources[2] = {rsrc, pool};
     using binning_t = decltype(binning_resource(thresholds, resources));
     auto binning_rsrc = std::make_shared<binning_t>(thresholds, resources);
     return binning_rsrc;
@@ -234,31 +239,32 @@ inline std::shared_ptr<device_async_resource> CreateDefaultDeviceResource() {
   int device_id = 0;
   CUDA_CALL(cudaGetDevice(&device_id));
   if (MMEnv::get().use_cuda_malloc_async) {
-    #if CUDA_VERSION >= 11020
-      if (!cuda_malloc_async_memory_resource::is_supported(device_id))
-        throw std::invalid_argument(make_string(
-            "cudaMallocAsync is not supported on device ", device_id));
-      return std::make_shared<mm::cuda_malloc_async_memory_resource>(device_id);
-    #else
+#if CUDA_VERSION >= 11020
+    if (!cuda_malloc_async_memory_resource::is_supported(device_id))
       throw std::invalid_argument(
+          make_string("cudaMallocAsync is not supported on device ", device_id));
+    return std::make_shared<mm::cuda_malloc_async_memory_resource>(device_id);
+#else
+    throw std::invalid_argument(
         "In order to use DALI_USE_CUDA_MALLOC_ASYNC, compile DALI with CUDA 11.2 or newer.");
-    #endif
+#endif
   }
   if (!MMEnv::get().use_dev_mem_pool) {
     return std::make_shared<mm::cuda_malloc_memory_resource>(device_id);
   }
-  #if DALI_USE_CUDA_VM_MAP
+#if DALI_USE_CUDA_VM_MAP
   if (cuvm::IsSupported() && MMEnv::get().use_vmm) {
-    using resource_type = mm::async_pool_resource<mm::memory_kind::device, cuda_vm_resource,
-                                                  std::mutex, void>;
+    using resource_type =
+        mm::async_pool_resource<mm::memory_kind::device, cuda_vm_resource, std::mutex, void>;
     return std::make_shared<resource_type>();
   }
-  #endif  // DALI_USE_CUDA_VM_MAP
+#endif  // DALI_USE_CUDA_VM_MAP
   {
     auto upstream = std::make_shared<mm::cuda_malloc_memory_resource>(device_id);
 
-    using resource_type = mm::async_pool_resource<mm::memory_kind::device,
-            pool_resource<memory_kind::device, coalescing_free_tree, spinlock>>;
+    using resource_type =
+        mm::async_pool_resource<mm::memory_kind::device,
+                                pool_resource<memory_kind::device, coalescing_free_tree, spinlock>>;
     auto rsrc = std::make_shared<resource_type>(upstream.get());
     return make_shared_composite_resource(std::move(rsrc), std::move(upstream));
   }
@@ -270,8 +276,9 @@ inline std::shared_ptr<pinned_async_resource> CreateDefaultPinnedResource() {
     return upstream;
   }
   static auto upstream = std::make_shared<pinned_malloc_memory_resource>();
-  using resource_type = mm::async_pool_resource<mm::memory_kind::pinned,
-      pool_resource<memory_kind::pinned, coalescing_free_tree, spinlock>>;
+  using resource_type =
+      mm::async_pool_resource<mm::memory_kind::pinned,
+                              pool_resource<memory_kind::pinned, coalescing_free_tree, spinlock>>;
   auto rsrc = std::make_shared<resource_type>(upstream.get());
   return make_shared_composite_resource(std::move(rsrc), upstream);
 }
@@ -302,9 +309,7 @@ const std::shared_ptr<pinned_async_resource> &ShareDefaultResourceImpl<memory_ki
     if (!g_resources.pinned_async) {
       static CUDARTLoader init_cuda;  // force initialization of CUDA before creating the resource
       g_resources.pinned_async = CreateDefaultPinnedResource();
-      static auto cleanup = AtScopeExit([] {
-        g_resources.ReleasePinned();
-      });
+      static auto cleanup = AtScopeExit([] { g_resources.ReleasePinned(); });
     }
   }
   return g_resources.pinned_async;
@@ -317,9 +322,7 @@ const std::shared_ptr<managed_async_resource> &ShareDefaultResourceImpl<memory_k
     if (!g_resources.managed) {
       static CUDARTLoader init_cuda;  // force initialization of CUDA before creating the resource
       g_resources.managed = CreateDefaultManagedResource();
-      static auto cleanup = AtScopeExit([] {
-        g_resources.ReleaseManaged();
-      });
+      static auto cleanup = AtScopeExit([] { g_resources.ReleaseManaged(); });
     }
   }
   return g_resources.managed;
@@ -337,9 +340,7 @@ const std::shared_ptr<device_async_resource> &ShareDefaultDeviceResourceImpl(int
       DeviceGuard devg(device_id);
       static CUDARTLoader init_cuda;  // force initialization of CUDA before creating the resource
       g_resources.device[device_id] = CreateDefaultDeviceResource();
-      static auto cleanup = AtScopeExit([] {
-        g_resources.ReleaseDevice();
-      });
+      static auto cleanup = AtScopeExit([] { g_resources.ReleaseDevice(); });
     }
   }
   return g_resources.device[device_id];
@@ -353,28 +354,30 @@ const std::shared_ptr<device_async_resource> &ShareDefaultResourceImpl<memory_ki
 }  // namespace
 
 
-template <> DLL_PUBLIC
-void SetDefaultResource<memory_kind::host>(std::shared_ptr<host_memory_resource> resource) {
+template <>
+DLL_PUBLIC void SetDefaultResource<memory_kind::host>(
+    std::shared_ptr<host_memory_resource> resource) {
   std::lock_guard<std::mutex> lock(g_resources.mtx);
   g_resources.host = std::move(resource);
 }
 
 
-template <> DLL_PUBLIC
-void SetDefaultResource<memory_kind::host>(host_memory_resource *resource, bool own) {
+template <>
+DLL_PUBLIC void SetDefaultResource<memory_kind::host>(host_memory_resource *resource, bool own) {
   SetDefaultResource<memory_kind::host>(wrap(resource, own));
 }
 
 
-template <> DLL_PUBLIC
-void SetDefaultResource<memory_kind::pinned>(std::shared_ptr<pinned_async_resource> resource) {
+template <>
+DLL_PUBLIC void SetDefaultResource<memory_kind::pinned>(
+    std::shared_ptr<pinned_async_resource> resource) {
   std::lock_guard<std::mutex> lock(g_resources.mtx);
   g_resources.pinned_async = std::move(resource);
 }
 
 
-template <> DLL_PUBLIC
-void SetDefaultResource<memory_kind::pinned>(pinned_async_resource *resource, bool own) {
+template <>
+DLL_PUBLIC void SetDefaultResource<memory_kind::pinned>(pinned_async_resource *resource, bool own) {
   SetDefaultResource<memory_kind::pinned>(wrap(resource, own));
 }
 
@@ -400,31 +403,33 @@ DLL_PUBLIC void _Test_FreeDeviceResources() {
   g_resources.num_devices = 0;
 }
 
-template <> DLL_PUBLIC
-void SetDefaultResource<memory_kind::device>(std::shared_ptr<device_async_resource> resource) {
+template <>
+DLL_PUBLIC void SetDefaultResource<memory_kind::device>(
+    std::shared_ptr<device_async_resource> resource) {
   int dev = 0;
   CUDA_CALL(cudaGetDevice(&dev));
   SetDefaultDeviceResource(dev, std::move(resource));
 }
 
-template <> DLL_PUBLIC
-void SetDefaultResource<memory_kind::device>(device_async_resource *resource, bool own) {
+template <>
+DLL_PUBLIC void SetDefaultResource<memory_kind::device>(device_async_resource *resource, bool own) {
   SetDefaultResource<memory_kind::device>(wrap(resource, own));
 }
 
-template <typename Kind> DLL_PUBLIC
-std::shared_ptr<default_memory_resource_t<Kind>> ShareDefaultResource() {
+template <typename Kind>
+DLL_PUBLIC std::shared_ptr<default_memory_resource_t<Kind>> ShareDefaultResource() {
   return ShareDefaultResourceImpl<Kind>();
 }
 
-template <typename Kind> DLL_PUBLIC
-default_memory_resource_t<Kind> *GetDefaultResource() {
+template <typename Kind>
+DLL_PUBLIC default_memory_resource_t<Kind> *GetDefaultResource() {
   return ShareDefaultResourceImpl<Kind>().get();
 }
 
-#define INSTANTIATE_DEFAULT_RESOURCE_GETTERS(Kind) \
-template DLL_PUBLIC std::shared_ptr<default_memory_resource_t<Kind>> ShareDefaultResource<Kind>(); \
-template DLL_PUBLIC default_memory_resource_t<Kind> *GetDefaultResource<Kind>();
+#define INSTANTIATE_DEFAULT_RESOURCE_GETTERS(Kind)                     \
+  template DLL_PUBLIC std::shared_ptr<default_memory_resource_t<Kind>> \
+  ShareDefaultResource<Kind>();                                        \
+  template DLL_PUBLIC default_memory_resource_t<Kind> *GetDefaultResource<Kind>();
 
 INSTANTIATE_DEFAULT_RESOURCE_GETTERS(memory_kind::host);
 INSTANTIATE_DEFAULT_RESOURCE_GETTERS(memory_kind::pinned);
@@ -443,11 +448,11 @@ device_async_resource *GetDefaultDeviceResource(int device_id) {
 
 template <typename Kind>
 void ReleaseUnusedMemory(mm::memory_resource<Kind> *mr) {
-  if (auto *pool = dynamic_cast<mm::pool_resource_base<Kind>*>(mr)) {
+  if (auto *pool = dynamic_cast<mm::pool_resource_base<Kind> *>(mr)) {
     pool->release_unused();
-  } else if (auto *up_rsrc = dynamic_cast<mm::with_upstream<Kind>*>(mr)) {
+  } else if (auto *up_rsrc = dynamic_cast<mm::with_upstream<Kind> *>(mr)) {
     ReleaseUnusedMemory(up_rsrc->upstream());
-  } else if (auto *bin_rsrc = dynamic_cast<mm::binning_resource_base<Kind>*>(mr)) {
+  } else if (auto *bin_rsrc = dynamic_cast<mm::binning_resource_base<Kind> *>(mr)) {
     for (int bin = 0; bin < bin_rsrc->num_bins(); bin++) {
       ReleaseUnusedMemory(bin_rsrc->resource(bin));
     }

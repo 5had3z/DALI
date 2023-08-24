@@ -17,11 +17,11 @@
 
 #include <cuda_runtime.h>
 #include <cstring>
-#include <utility>
 #include <memory>
+#include <utility>
 #include <vector>
-#include "dali/core/util.h"
 #include "dali/core/cuda_utils.h"
+#include "dali/core/util.h"
 
 namespace dali {
 
@@ -50,13 +50,13 @@ struct SmallVectorAlloc<T, Allocator, true> {
   static __host__ void deallocate(T *ptr, size_t count) {
     Allocator().deallocate(ptr, count);
   }
-  // Add no-op __device__ overload for functions used in __host__ __device__ context by clang
-  #if defined(__clang__) && defined(__CUDA__)
+// Add no-op __device__ overload for functions used in __host__ __device__ context by clang
+#if defined(__clang__) && defined(__CUDA__)
   static __device__ T *allocate(size_t count) {
     return nullptr;
   }
   static __device__ void deallocate(T *ptr, size_t count) {}
-  #endif
+#endif
 };
 
 template <typename T>
@@ -70,13 +70,14 @@ struct SmallVectorAlloc<T, device_side_allocator<T>, true> {
 };
 
 
-template <typename T, bool is_pod = std::is_pod<T>::value>
+template <typename T,
+          bool is_pod = (std::is_standard_layout<T>::value && std::is_trivial<T>::value)>
 class SmallVectorBase {
  protected:
   DALI_NO_EXEC_CHECK
   DALI_HOST_DEV static void move_and_destroy(T *dest, T *src, size_t count) noexcept {
     for (size_t i = 0; i < count; i++) {
-      new(dest + i) T(cuda_move(src[i]));
+      new (dest + i) T(cuda_move(src[i]));
       src[i].~T();
     }
   }
@@ -90,7 +91,7 @@ class SmallVectorBase {
 
   DALI_NO_EXEC_CHECK
   DALI_HOST_DEV static void copy(T *dst, const T *src, size_t count) {
-    for (size_t i = 0; i <count; i++)
+    for (size_t i = 0; i < count; i++)
       dst[i] = src[i];
   }
 };
@@ -119,10 +120,14 @@ class SmallVectorBase<T, true> {
 
 #if defined(__clang__) && defined(__CUDA__)
 template <typename T>
-__device__ device_side_allocator<T> GetDefaultAlocatorType() { return {}; }
+__device__ device_side_allocator<T> GetDefaultAlocatorType() {
+  return {};
+}
 
 template <typename T>
-__host__ std::allocator<T> GetDefaultAlocatorType() { return {}; }
+__host__ std::allocator<T> GetDefaultAlocatorType() {
+  return {};
+}
 
 template <typename T>
 using default_small_vector_allocator =
@@ -192,14 +197,13 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
 
   DALI_NO_EXEC_CHECK
   template <size_t other_static_size, typename alloc>
-  DALI_HOST_DEV SmallVector(const SmallVector<T, other_static_size, alloc> &other)
-  : SmallVector() {
+  DALI_HOST_DEV SmallVector(const SmallVector<T, other_static_size, alloc> &other) : SmallVector() {
     *this = other;
   }
 
   template <size_t other_static_size>
   DALI_HOST_DEV SmallVector(SmallVector<T, other_static_size, allocator> &&other) noexcept
-  : SmallVector() {
+      : SmallVector() {
     *this = cuda_move(other);
   }
 
@@ -223,9 +227,9 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
     reserve(n);
     T *ptr = data();
     for (decltype(n) i = 0; i < n; i++) {
-      new(ptr+i) T(c[i]);
-      if (!noexcept(new(ptr+i) T(c[i])))
-        set_size(i+1);
+      new (ptr + i) T(c[i]);
+      if (!noexcept(new (ptr + i) T(c[i])))
+        set_size(i + 1);
     }
     set_size(n);
     return *this;
@@ -243,7 +247,7 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
   }
 
   DALI_HOST_DEV void copy_assign(const T *begin, const T *end) {
-    copy_assign(begin, end-begin);
+    copy_assign(begin, end - begin);
   }
 
   DALI_NO_EXEC_CHECK
@@ -251,14 +255,14 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
     clear();
     reserve(count);
     T *ptr = this->data();
-    if (std::is_pod<T>::value) {
+    if (std::is_standard_layout<T>::value && std::is_trivial<T>::value) {
       this->copy(ptr, data, count);
       set_size(count);
     } else {
       for (size_t i = 0; i < count; i++) {
-        new(ptr+i) T(data[i]);
-        if (!noexcept(new(ptr+i) T(data[i])))
-          set_size(i+1);
+        new (ptr + i) T(data[i]);
+        if (!noexcept(new (ptr + i) T(data[i])))
+          set_size(i + 1);
       }
       set_size(count);
     }
@@ -270,16 +274,16 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
     const T *src = v.data();
     if (capacity() >= v.size()) {
       size_t i;
-      T  *ptr = data();
+      T *ptr = data();
       // overwrite common length
       for (i = 0; i < v.size() && i < size(); i++) {
         ptr[i] = src[i];
       }
       // construct new elements
       for (; i < v.size(); i++) {
-        new(ptr+i) T(src[i]);
+        new (ptr + i) T(src[i]);
 #ifndef __CUDA_ARCH__
-        if (!noexcept(new(ptr+i) T(src[i])))
+        if (!noexcept(new (ptr + i) T(src[i])))
           set_size(i + 1);
 #endif
       }
@@ -292,16 +296,16 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
       clear();
       reserve(v.size());
       T *ptr = data();
-      if (std::is_pod<T>::value) {
+      if (std::is_standard_layout<T>::value && std::is_trivial<T>::value) {
         set_size(v.size());
         for (size_t i = 0; i < size(); i++) {
           ptr[i] = src[i];
         }
       } else {
         for (size_t i = 0; i < v.size(); i++) {
-          new(ptr + i) T(src[i]);
+          new (ptr + i) T(src[i]);
 #ifndef __CUDA_ARCH__
-          if (!noexcept(new(ptr + i) T(src[i])))
+          if (!noexcept(new (ptr + i) T(src[i])))
             set_size(i + 1);
 #endif
         }
@@ -353,14 +357,14 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
       }
       T *src = v.data();
       T *dst = data();
-      if (std::is_pod<T>::value) {
+      if (std::is_standard_layout<T>::value && std::is_trivial<T>::value) {
         this->copy(dst, src, v.size());
         set_size(v.size());
       } else {
         for (size_t i = 0; i < v.size(); i++) {
-          new(dst + i) T(cuda_move(src[i]));
+          new (dst + i) T(cuda_move(src[i]));
 #ifndef __CUDA_ARCH__
-          if (!noexcept(new(dst + i) T(cuda_move(src[i]))))
+          if (!noexcept(new (dst + i) T(cuda_move(src[i]))))
             set_size(i + 1);  // if the `new` above throws, we're in a consistent state
 #endif
         }
@@ -372,11 +376,11 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
   }
 
   using value_type = T;
-  using pointer = T*;
-  using reference = T&;
-  using const_reference = const T&;
-  using iterator = T*;
-  using const_iterator = const T*;
+  using pointer = T *;
+  using reference = T &;
+  using const_reference = const T &;
+  using iterator = T *;
+  using const_iterator = const T *;
   using index_type = std::ptrdiff_t;
 
   DALI_HOST_DEV inline iterator begin() {
@@ -471,10 +475,10 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
 
   DALI_NO_EXEC_CHECK
   template <typename... Args>
-  DALI_HOST_DEV inline void emplace_back(Args&&... args) {
+  DALI_HOST_DEV inline void emplace_back(Args &&...args) {
     pre_append();
     T *ptr = data();
-    new(ptr + size_) T(cuda_forward<Args>(args)...);
+    new (ptr + size_) T(cuda_forward<Args>(args)...);
     set_size(size() + 1);
   }
 
@@ -500,13 +504,13 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
 
   DALI_NO_EXEC_CHECK
   template <typename... Args>
-  DALI_HOST_DEV inline iterator emplace(const_iterator before, Args&&... args) {
+  DALI_HOST_DEV inline iterator emplace(const_iterator before, Args &&...args) {
     return emplace_at(before - begin(), cuda_forward<Args>(args)...);
   }
 
   DALI_NO_EXEC_CHECK
   template <typename... Args>
-  DALI_HOST_DEV inline iterator emplace_at(index_type index, Args&&... args) {
+  DALI_HOST_DEV inline iterator emplace_at(index_type index, Args &&...args) {
     if (index == static_cast<index_type>(size())) {
       emplace_back(cuda_forward<Args>(args)...);
       return begin() + index;
@@ -520,7 +524,7 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
       index_type i = -1;
       index_type n = size();
 
-      if (std::is_pod<T>::value) {
+      if (std::is_standard_layout<T>::value && std::is_trivial<T>::value) {
         for (i = 0; i < index; i++)
           new_data[i] = ptr[i];
 
@@ -529,13 +533,13 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
         for (; i <= n; i++)
           new_data[i] = ptr[i - 1];
       } else {
-          new(new_data + index) T(cuda_forward<Args>(args)...);
-          for (i = 0; i < index; i++)
-            new(new_data + i) T(cuda_move(ptr[i]));
-          i++;
+        new (new_data + index) T(cuda_forward<Args>(args)...);
+        for (i = 0; i < index; i++)
+          new (new_data + i) T(cuda_move(ptr[i]));
+        i++;
 
-          for (; i <= n; i++)
-            new(new_data + i) T(cuda_move(ptr[i - 1]));
+        for (; i <= n; i++)
+          new (new_data + i) T(cuda_move(ptr[i - 1]));
         this->destroy(ptr, n);
       }
 
@@ -571,7 +575,7 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
     for (index_type dst = first, src = first + count; src < n; dst++, src++)
       ptr[dst] = cuda_move(ptr[src]);
 
-    if (!std::is_pod<T>::value) {
+    if (!(std::is_standard_layout<T>::value && std::is_trivial<T>::value)) {
       for (index_type i = n - count; i < n; i++)
         ptr[i].~T();
     }
@@ -591,7 +595,7 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
     reserve(count);
     T *ptr = data();
     for (size_t i = size(); i < count; i++) {
-      new(ptr + i) T();
+      new (ptr + i) T();
     }
     for (size_t i = count; i < size(); i++) {
       ptr[i].~T();
@@ -604,7 +608,7 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
     reserve(count);
     T *ptr = data();
     for (size_t i = size(); i < count; i++) {
-      new(ptr + i) T(value);
+      new (ptr + i) T(value);
     }
     for (size_t i = count; i < size(); i++) {
       ptr[i].~T();
@@ -634,7 +638,7 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
       bool dynamic;
       T *new_data = allocate(new_capacity, dynamic);
       for (size_t i = 0; i < size(); i++) {
-        new(new_data + i) T(cuda_move(ptr[i]));
+        new (new_data + i) T(cuda_move(ptr[i]));
         ptr[i].~T();
       }
       deallocate(ptr);
@@ -652,9 +656,8 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
   template <typename U, size_t n, typename A>
   friend class SmallVector;
 
-  using storage_t = typename std::aligned_storage<sizeof(T) * static_size_, alignof(T)>::type;
   union {
-    storage_t storage;
+    alignas(T) std::byte storage[sizeof(T) * static_size_];
     struct {
       T *data;
       size_t capacity;
@@ -675,9 +678,9 @@ class SmallVector : SmallVectorAlloc<T, allocator>, SmallVectorBase<T> {
     T *ptr = data();
     size_t n = size();
     size_t i = n;
-    new(ptr + i)T(cuda_move(ptr[i-1]));
+    new (ptr + i) T(cuda_move(ptr[i - 1]));
     for (; i > index; i--) {
-      ptr[i] = cuda_move(ptr[i-1]);
+      ptr[i] = cuda_move(ptr[i - 1]);
     }
   }
 
